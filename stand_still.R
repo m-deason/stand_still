@@ -669,13 +669,12 @@ result.sizes$'sizes$herd.size' <- NULL
 #### sheep herd sizes ####
 # sibylle's sheep and goat inventory 
 # only yearly
-# new column; flock.size
 
 load('my_inv.RData')
 inv$cph <- as.integer(inv$CPH <- gsub('/', '', inv$CPH)) # removes '/'; stores as integer
 inv <- inv[c('cph','year','number_of_sheep')]
 inv <- inv[inv$cph > 9999,] # remove common grazing CPHs
-names(inv) <- c('cph.off', 'year', 'flock.size')
+names(inv) <- c('cph.off', 'year', 'flock.size') # new column; flock.size
 result.sizes$year <- as.integer(format(result.sizes$date, '%Y'))
 result.inv <- merge(result.sizes, inv, all.x=TRUE)
 
