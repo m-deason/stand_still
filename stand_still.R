@@ -750,65 +750,59 @@ result.type.sizes$mixed.holding <- ifelse(result.type.sizes$cph.off %in% mixed.c
 #### generate parish level easting and northing values for farms with missing x&y ####
 
 names(sam.coords) <- c('location_id', 'premises_type_code', 'cph', 'county_id', 'location_name', 'x', 'y','parish')
-# unique.parishes <- unique(sam.coords$parish)
-# unique.parishes <- unique.parishes[!is.na(unique.parishes)]
-# unique.parishes <- unique.parishes[order(unique.parishes)]
-# new.parish.coords <- as.data.frame(matrix(NA,ncol=4,nrow=length(unique(sam.coords$parish))))
-# names(new.parish.coords) <- c('parish','x','y','notes')
-# 
-# for (i in unique.parishes) { # 11759 parishes
-#   
-#   parish.data <- sam.coords[sam.coords$parish==i,] # subset for parish
-#   parish.data <- parish.data[!is.na(parish.data$parish),] # subset for parish
-#   # 
-#   if(nrow(parish.data)>2) {
-#     
-#     new.parish.coords$parish[which(unique.parishes==i)] <- i
-#     new.parish.coords$x[which(unique.parishes==i)] <- round(sample(parish.data$x, 1) + rnorm(1, 0, density(parish.data$x)$bw))
-#     new.parish.coords$y[which(unique.parishes==i)] <- round(sample(parish.data$y, 1) + rnorm(1, 0, density(parish.data$y)$bw))
-#     new.parish.coords$notes[which(unique.parishes==i)] <- 'sampled'
-#     
-#   } else {
-#     
-#     new.parish.coords$parish[which(unique.parishes==i)] <- i
-#     new.parish.coords$x[which(unique.parishes==i)] <- round(mean(parish.data$x))
-#     new.parish.coords$y[which(unique.parishes==i)] <- round(mean(parish.data$y))
-#     new.parish.coords$notes[which(unique.parishes==i)] <- 'mean'
-#     
-#   }
-#   
-# }
-# rm(i, unique.parishes, parish.data)
+result.type.sizes$parish.off <- substr(result.type.sizes$cph.off, 1, nchar(result.type.sizes$cph.off)-4) # remove last 4 digits of CPH to get County+Parish
 
-#### assign missing x & y with dummy parish data ####
-# 2112 entries missing coordinates
-# each movement has a unique x & y; the same farm can have multiple x & y's
-# find some way to ensure the new coords aren't in the sea; scotland.xy
+library(sp) 
+new.coords <- data.frame() # initialise empty data.frame
 
-stored.df <- result.type.sizes
-
-for(i in 1:nrow(stored.df)) {
+for (i in unique(result.type.sizes$cph.off)) {
   
-  if(is.na(stored.df$off.x[i])) { # does farm i have x and y?
+  cph.subset <- result.type.sizes[result.type.sizes$cph.off==i,] # subset for the cph of interest
+  cph.subset <- cph.subset[!is.na(cph.subset$cph.off),] # remove any rogue NAs
   
-    parish.data <- sam.coords[sam.coords$parish==stored.df$parish.off[i],]
-    parish.data <- parish.data[!is.na(parish.data$x),] # subset for parish
+  if(is.na(cph.subset$off.x[1])) { # if the coords are missing from one, they should be missing from all
     
-    if(nrow(parish.data)>2) {
-  
-      stored.df$off.x[i] <- round(sample(parish.data$x, 1) + rnorm(1, 0, density(parish.data$x)$bw))
-      stored.df$off.y[i] <- round(sample(parish.data$y, 1) + rnorm(1, 0, density(parish.data$y)$bw))
+    parish.data <- sam.coords[sam.coords$parish==cph.subset$parish.off[1],] # subset locations data for parish of interest
+    parish.data <- parish.data[!is.na(parish.data$x),] # remove any rogue NAs
+    
+    repeat { # repeat this loop until the appropriate coords are found i.e. coords within Scotland
       
-    } else {
+      if(nrow(parish.data)>2) { # use a randomly distributed jitter for the sampled coords
+        
+        new.off.x <- round(sample(parish.data$x, 1) + rnorm(1, 0, density(parish.data$x)$bw))
+        new.off.y <- round(sample(parish.data$y, 1) + rnorm(1, 0, density(parish.data$y)$bw))
+        
+      } else { # if there aren't enough to calculate density, just take the mean; 
+        
+        new.off.x <- signif(mean(parish.data$x), digits = 5) # only 5 significant digits just in case there is only one farm 
+        new.off.y <- signif(mean(parish.data$y), digits = 5) # hopefully the values aren't both already 5 significant digits long
+        
+      } 
       
-      stored.df$off.x[i] <- round(mean(parish.data$x))
-      stored.df$off.y[i] <- round(mean(parish.data$y))
-      
+      if (!is.na(over(SpatialPoints(cbind(Easting = new.off.x, # ensure point is in scotland
+                                          Northing = new.off.y), 
+                                    proj4string = CRS('+init=epsg:27700')), 
+                      as(scotland.xy,'SpatialPolygons')))) 
+        break 
     }
     
-  }
+    new.coords <- rbind(new.coords, cbind(i, new.off.x, new.off.y)) # save new coords
+    
+  } 
   
 }
+
+names(new.coords) <- c('cph.off','new.off.x','new.off.y')
+new.coords$new.off.x <- as.integer(as.character(new.coords$new.off.x)) # remove factoring
+new.coords$new.off.y <- as.integer(as.character(new.coords$new.off.y)) # remove factoring
+
+result.type.sizes <- merge(result.type.sizes, new.coords, all.x=TRUE)
+result.type.sizes$off.x <- ifelse(is.na(result.type.sizes$off.x),
+                          result.type.sizes$new.off.x,
+                          result.type.sizes$off.x)
+result.type.sizes$off.y <- ifelse(is.na(result.type.sizes$off.y),
+                          result.type.sizes$new.off.y,
+                          result.type.sizes$off.y)
 
 #### MapGAM package ####
 
