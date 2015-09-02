@@ -415,6 +415,7 @@ for (farm in scot.farms) { # for each on location; a list of scottish farms
       difference.in.days <- ordered.movements$date[i] - ordered.movements$date[first.move.index] # subtract the on movement date from the off movement date
       
       if (difference.in.days > 0) { # make sure it's greater than 0
+        
         differences <- rbind(differences, 
                              cbind(rbind(ordered.movements[first.move.index,], 
                                          ordered.movements[i,]),
@@ -432,7 +433,7 @@ for (farm in scot.farms) { # for each on location; a list of scottish farms
   
 }
 
-# 207236 obs; old data (27-08-2014) 128340
+# 205960 obs
 results.combined$diff <- results.combined$'rbind(difference.in.days, difference.in.days)' # rename the variable
 results.combined$'rbind(difference.in.days, difference.in.days)' <- NULL
 results.combined$mixed.holding <- ifelse(results.combined$cph.off %in% mixed.cph, 'mixed.holding', results.combined$species)
@@ -561,10 +562,9 @@ for (i in 1:nrow(result.calf)) {
     
   }
   
-  keeper.results <- rbind(keeper.results, 
+  keeper.results <- rbind(keeper.results, # happened 13 times with cbind: 'number of rows of result is not a multiple of vector length'  
                           cbind(cph.off, cph.on, date, keeper.off, keeper.on))  
-  # happened 13 times with cbind: 'number of rows of result is not a multiple of vector length' 
-  
+    
 }
 
 keeper.results$date <- as.Date(keeper.results$date, origin='1970-01-01')
@@ -598,6 +598,7 @@ result.cph.keeper$case.final <- ifelse(result.cph.keeper$diff <= 13 & result.cph
                                        ifelse(result.cph.keeper$diff <= 13 & result.cph.keeper$standstill.exempt=='not_exempt', 1, 0))
 
 #### add herd sizes for the date of the movement breaking the standstill period ####
+
 sam.herd.sizes <- read.csv('REQUESTqryMDeasonHoldingSizes2002To2013.csv', header=TRUE, stringsAsFactors=FALSE) # read in herd size information
 names(sam.herd.sizes) <- c('cph', 'year', 'month', 'herd.size')
 sam.herd.sizes <- unique(sam.herd.sizes) # removes duplicate 2011 data
@@ -648,9 +649,7 @@ for (i in 1:nrow(result.cph.keeper)) {
     
   } # end of if (nrow(x)>0) loop 
   
-} # end of big loop
-
-# 26 movements do not have any herd size information
+} # end of big loop; 26 movements do not have any herd size information
 
 rm(i, j, sam.herd.sizes)
 sizes$i <- NULL # remove index, used for debugging
@@ -662,6 +661,7 @@ sizes$date <- as.Date(as.integer(as.character(sizes$date)), origin='1970-01-01')
 
 #### merge with the results ####
 # rows match perfectly because of the 'for' loop
+
 result.sizes <- cbind(result.cph.keeper, sizes$herd.size)
 result.sizes$herd.size <- result.sizes$'sizes$herd.size'
 result.sizes$'sizes$herd.size' <- NULL
@@ -734,8 +734,9 @@ for (i in unique(sam.herd$cph.off)) {
 }
 
 result.type.sizes <- merge(result.inv, herd.merge[c('cph.off', 'herd.type')], all.x=TRUE)
+rm(x)
 
-# databasing errors #
+# obvious databasing errors #
 result.type.sizes[result.type.sizes$cph.off==783930036 & result.type.sizes$year==2011,]$flock.size <- 3855
 
 # sum total number of animals (sheep and cattle) on farm
@@ -747,12 +748,22 @@ result.type.sizes$total.animals <- rowSums(cbind(result.type.sizes$herd.size, re
 
 result.type.sizes$mixed.holding <- ifelse(result.type.sizes$cph.off %in% mixed.cph, 'mixed.holding', result.type.sizes$species)
 
+#### scotland map ####
+# map in long_lat / data in eastings and northings
+# Variables for holding the coordinate system types 
+latlong <- '+init=epsg:4326'
+ukgrid <- '+init=epsg:27700'
+
+load('GBR_adm1.RData')
+scotland <- gadm[gadm@data$NAME_1=='Scotland',] # map of scotland including rockall :(
+rm(gadm)
+scotland <- crop(scotland,  extent(-8, -0.761805, 54.63292, 60.84582)) # removes rockall
+scotland.xy <- spTransform(scotland, CRS(ukgrid)) # convert scotland into eastings and northings
+
 #### generate parish level easting and northing values for farms with missing x&y ####
+# 334 in total
 
 names(sam.coords) <- c('location_id', 'premises_type_code', 'cph', 'county_id', 'location_name', 'x', 'y','parish')
-result.type.sizes$parish.off <- substr(result.type.sizes$cph.off, 1, nchar(result.type.sizes$cph.off)-4) # remove last 4 digits of CPH to get County+Parish
-
-library(sp) 
 new.coords <- data.frame() # initialise empty data.frame
 
 for (i in unique(result.type.sizes$cph.off)) {
@@ -796,6 +807,7 @@ names(new.coords) <- c('cph.off','new.off.x','new.off.y')
 new.coords$new.off.x <- as.integer(as.character(new.coords$new.off.x)) # remove factoring
 new.coords$new.off.y <- as.integer(as.character(new.coords$new.off.y)) # remove factoring
 
+
 result.type.sizes <- merge(result.type.sizes, new.coords, all.x=TRUE)
 result.type.sizes$off.x <- ifelse(is.na(result.type.sizes$off.x),
                           result.type.sizes$new.off.x,
@@ -806,26 +818,8 @@ result.type.sizes$off.y <- ifelse(is.na(result.type.sizes$off.y),
 
 #### MapGAM package ####
 
-# scotland map
-# map in long_lat / data in eastings and northings
-load('GBR_adm1.RData')
-scotland <- gadm[gadm@data$NAME_1=='Scotland',] # map of scotland including rockall :(
-rm(gadm)
-scotland <- crop(scotland,  extent(-8, -0.761805, 54.63292, 60.84582)) # removes rockall
-
-#### convert scotland into eastings and northings ####
-scotland.xy <- spTransform(scotland, CRS('+init=epsg:27700'))
-
-### subset data, make sure all data have x and y ###
-
-#~~~~#
-
-# add in dummy parish data if x and y are missing
-
-#~~~~#
-
-# result.single.gam <- result.type.sizes[c('case.final','off.x','off.y','total.animals', 'diff', 'year')]
-# result.single.gam <- result.single.gam[complete.cases(result.single.gam[c('off.x','off.y')]),] # complete data for location
+result.single.gam <- result.type.sizes[c('case.final','off.x','off.y','total.animals', 'diff', 'year')]
+result.single.gam <- result.single.gam[complete.cases(result.single.gam[c('off.x','off.y')]),] # complete data for location
 
 #### mean number of animals per farm ####
 
@@ -862,12 +856,6 @@ scot.mean.density.sp <- SpatialPointsDataFrame(cbind(Easting = scot.mean.density
 #### make a new grid ####
 # use the scotland map instead of scot.mean.density to find range to make grid
 
-# scot.mean.grid <- as.data.frame(expand.grid(X = seq(extent(scot.mean.density.sp)[1], # x-min
-#                                                     extent(scot.mean.density.sp)[2], 
-#                                                     by = 1000), 
-#                                             Y = seq(extent(scot.mean.density.sp)[3],
-#                                                     extent(scot.mean.density.sp)[4],
-#                                                     by = 1000)))
 scot.mean.grid <- as.data.frame(expand.grid(X = seq(extent(scotland.xy)[1], # x-min
                                                     extent(scotland.xy)[2], 
                                                     by = 1000), 
@@ -881,10 +869,6 @@ scot.mean.grid.sp.trim <- scot.mean.grid.sp[!is.na(over(scot.mean.grid.sp, as(sc
 
 #### convert eastings and northings to lat long ####
 library(rgdal)
-
-# Variables for holding the coordinate system types 
-latlong <- '+init=epsg:4326'
-ukgrid <- '+init=epsg:27700'
 
 coords <- cbind(Easting = as.numeric(as.character(result.single.gam$off.x)),
                  Northing = as.numeric(as.character(result.single.gam$off.y)))
